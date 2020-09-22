@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">CheapGasStation</string>
+
+    <string name="google_map_key">AIzaSyBjIkzoPXcPY3LcKwtz213z3wtixZts8o4</string>
 </resources>
