@@ -58,17 +58,14 @@ public class GoogleMapActivity extends AppCompatActivity implements OnMapReadyCa
 
         mLocationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
 
-        Log.d("TAGGG", "onCreate: ");
         if (ContextCompat.checkSelfPermission(GoogleMapActivity.this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED
                 && ContextCompat.checkSelfPermission(GoogleMapActivity.this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            Log.d("TAGGG", "onCreate: sds");
             ActivityCompat.requestPermissions(GoogleMapActivity.this, new String[]{Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION}, 1);
         }
 
         mLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, new android.location.LocationListener() {
             @Override
             public void onLocationChanged(Location location) {
-                Log.d("TAGGG", "onLocationChanged: " + location);
                 if (location == null || location.getLatitude() == 0 || location.getLongitude() == 0) {
                     Toast.makeText(GoogleMapActivity.this, "Có lỗi trong quá trình xác thực vị trí hiện tại", Toast.LENGTH_SHORT).show();
                     return;
@@ -134,6 +131,7 @@ public class GoogleMapActivity extends AppCompatActivity implements OnMapReadyCa
     @Override
     public void onMapReady(GoogleMap googleMap) {
         mGoogleMap = googleMap;
+        mGoogleMap.setOnMarkerClickListener(this);
     }
 
     @Override
@@ -197,7 +195,7 @@ public class GoogleMapActivity extends AppCompatActivity implements OnMapReadyCa
     @Override
     public boolean onMarkerClick(Marker marker) {
         if(marker.equals(mYourMarker)){
-
+            Log.d("TAGGG", "onMarkerClick: click click");
         }
         return true;
     }
