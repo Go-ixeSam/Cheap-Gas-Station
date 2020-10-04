@@ -17,14 +17,13 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
-        <activity android:name=".Screen.DirectionActivity"></activity>
 
         <meta-data
             android:name="com.google.android.gms.version"
             android:value="@integer/google_play_services_version" />
         <meta-data
             android:name="com.google.android.geo.API_KEY"
-            android:value="@string/google_map_key" />
+            android:value="@string/google_map_key_1" />
 
         <activity android:name=".Screen.HomeActivity">
             <intent-filter>
@@ -42,6 +41,11 @@
             android:name=".Screen.LoginActivity"
             android:configChanges="orientation"
             android:screenOrientation="portrait" />
+
+        <activity android:name=".Screen.DirectionActivity"
+            android:configChanges="orientation"
+            android:screenOrientation="portrait"/>
+
     </application>
 
 </manifest>

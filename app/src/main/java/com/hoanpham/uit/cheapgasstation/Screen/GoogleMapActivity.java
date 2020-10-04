@@ -11,11 +11,12 @@ import android.location.Geocoder;
 import android.location.Location;
 import android.location.LocationManager;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 import android.widget.Toast;
 
 import androidx.annotation.DrawableRes;
-import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
@@ -30,22 +31,40 @@ import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.hoanpham.uit.cheapgasstation.Base.GoogleApiClient;
+import com.hoanpham.uit.cheapgasstation.Base.GoogleApiInterface;
+import com.hoanpham.uit.cheapgasstation.Base.MarkerInfoWindowAdapter;
 import com.hoanpham.uit.cheapgasstation.R;
+import com.hoanpham.uit.cheapgasstation.Server.NearbyPlace.Geometry;
+import com.hoanpham.uit.cheapgasstation.Server.NearbyPlace.NearbyResults;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
+import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
+import io.reactivex.rxjava3.annotations.NonNull;
+import io.reactivex.rxjava3.core.Observable;
+import io.reactivex.rxjava3.core.Observer;
+import io.reactivex.rxjava3.core.Single;
+import io.reactivex.rxjava3.core.SingleObserver;
+import io.reactivex.rxjava3.disposables.Disposable;
+import io.reactivex.rxjava3.schedulers.Schedulers;
 
-public class GoogleMapActivity extends AppCompatActivity implements OnMapReadyCallback, GoogleMap.OnMarkerClickListener {
+
+public class GoogleMapActivity extends AppCompatActivity implements OnMapReadyCallback, GoogleMap.OnMarkerClickListener, GoogleMap.OnInfoWindowClickListener {
 
 
     private SupportMapFragment mMapFragment;
     private GoogleMap mGoogleMap;
     private LocationManager mLocationManager;
     private Marker mYourMarker;
+    private Marker mOtherMarker;
     private static final int TWO_MINUTES = 1000 * 60 * 2;
-
+    private static final int RADIUS = 5000;
+    private Handler mHandler = new Handler(Looper.getMainLooper());
+    private List<LatLng> mListNearby = new ArrayList<>();
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -63,7 +82,7 @@ public class GoogleMapActivity extends AppCompatActivity implements OnMapReadyCa
             ActivityCompat.requestPermissions(GoogleMapActivity.this, new String[]{Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION}, 1);
         }
 
-        mLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, new android.location.LocationListener() {
+        mLocationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 0, 0, new android.location.LocationListener() {
             @Override
             public void onLocationChanged(Location location) {
                 if (location == null || location.getLatitude() == 0 || location.getLongitude() == 0) {
@@ -72,6 +91,7 @@ public class GoogleMapActivity extends AppCompatActivity implements OnMapReadyCa
                 }
 
                 addMarkerToGoogleMap(location.getLatitude(), location.getLongitude());
+                searchGasNearbyCurrentPosition(location.getLatitude(), location.getLongitude());
             }
 
             @Override
@@ -89,6 +109,64 @@ public class GoogleMapActivity extends AppCompatActivity implements OnMapReadyCa
 
             }
         });
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+
+    }
+
+    private void searchGasNearbyCurrentPosition(double lat, double lng) {
+        Log.d("TAGGG", "searchGasNearbyCurrentPosition: ");
+        GoogleApiInterface api = GoogleApiClient.createService(GoogleApiInterface.class);
+        Single<NearbyResults> resultsSingle = api.getNearByPlace(lat + "," + lng,
+                String.valueOf(RADIUS),
+                "gas_station",
+                getResources().getString(R.string.google_map_key_1));
+        resultsSingle.observeOn(AndroidSchedulers.mainThread())
+                .subscribeOn(Schedulers.io())
+                .subscribeWith(new SingleObserver<NearbyResults>() {
+
+                    @Override
+                    public void onSubscribe(@NonNull Disposable d) {
+
+                    }
+
+                    @Override
+                    public void onSuccess(@NonNull NearbyResults nearbyResults) {
+
+                        Log.d("TAGGG", "onSuccess: " + nearbyResults.getResults());
+                        if (nearbyResults.getResults().size() > 0) {
+                            for (int i = 0; i < nearbyResults.getResults().size(); i++) {
+                                Geometry geo = nearbyResults.getResults().get(i).getGeometry();
+                                LatLng latLng = new LatLng(geo.getLocation().getLat(), geo.getLocation().getLng());
+                                mListNearby.add(latLng);
+                            }
+                        }
+                        if (mListNearby.size() > 0) {
+//                            mHandler.post(() -> {
+                            showMarkerInMap(mListNearby, new LatLng(lat, lng));
+//                            });
+                        }
+                    }
+
+                    @Override
+                    public void onError(@NonNull Throwable e) {
+                    }
+                });
+    }
+
+    private void showMarkerInMap(List<LatLng> position, LatLng currentLocation) {
+        mGoogleMap.clear();
+        mGoogleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(currentLocation, 17.f));
+        addMarkerToGoogleMap(currentLocation.latitude, currentLocation.longitude);
+        for (LatLng latLng : position) {
+            MarkerOptions markerOptions = new MarkerOptions();
+            markerOptions.icon(bitmapDescriptorFromVector(getBaseContext(), R.drawable.ic_location_icon));
+            markerOptions.position(latLng);
+            mOtherMarker = mGoogleMap.addMarker(markerOptions);
+        }
     }
 
     private String getNameLocationFromLatLng(double lat, double lng) {
@@ -115,23 +193,25 @@ public class GoogleMapActivity extends AppCompatActivity implements OnMapReadyCa
             mMarkerOptions.title(addressName);
             mGoogleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(lat, lng), 17));
             mYourMarker = mGoogleMap.addMarker(mMarkerOptions);
-
+            mYourMarker.showInfoWindow();
         }
     }
 
     private BitmapDescriptor bitmapDescriptorFromVector(Context context, @DrawableRes int vectorDrawableResourceId) {
-            Drawable vectorDrawable = ContextCompat.getDrawable(context, vectorDrawableResourceId);
-            vectorDrawable.setBounds(0, 0, vectorDrawable.getIntrinsicWidth(), vectorDrawable.getIntrinsicHeight());
-            Bitmap bitmap = Bitmap.createBitmap(vectorDrawable.getIntrinsicWidth(), vectorDrawable.getIntrinsicHeight(), Bitmap.Config.ARGB_8888);
-            Canvas canvas = new Canvas(bitmap);
-            vectorDrawable.draw(canvas);
-            return BitmapDescriptorFactory.fromBitmap(bitmap);
+        Drawable vectorDrawable = ContextCompat.getDrawable(context, vectorDrawableResourceId);
+        vectorDrawable.setBounds(0, 0, vectorDrawable.getIntrinsicWidth(), vectorDrawable.getIntrinsicHeight());
+        Bitmap bitmap = Bitmap.createBitmap(vectorDrawable.getIntrinsicWidth(), vectorDrawable.getIntrinsicHeight(), Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        vectorDrawable.draw(canvas);
+        return BitmapDescriptorFactory.fromBitmap(bitmap);
     }
 
     @Override
     public void onMapReady(GoogleMap googleMap) {
         mGoogleMap = googleMap;
         mGoogleMap.setOnMarkerClickListener(this);
+        mGoogleMap.setInfoWindowAdapter(new MarkerInfoWindowAdapter(GoogleMapActivity.this));
+        mGoogleMap.setOnInfoWindowClickListener(this);
     }
 
     @Override
@@ -194,9 +274,16 @@ public class GoogleMapActivity extends AppCompatActivity implements OnMapReadyCa
 
     @Override
     public boolean onMarkerClick(Marker marker) {
-        if(marker.equals(mYourMarker)){
-            Log.d("TAGGG", "onMarkerClick: click click");
-        }
+        mGoogleMap.setInfoWindowAdapter(new MarkerInfoWindowAdapter(GoogleMapActivity.this));
+        marker.showInfoWindow();
         return true;
+    }
+
+    @Override
+    public void onInfoWindowClick(Marker marker) {
+        mGoogleMap.setInfoWindowAdapter(new MarkerInfoWindowAdapter(GoogleMapActivity.this));
+
+        Log.d("TAGGG", "onInfoWindowClick: ");
+        marker.showInfoWindow();
     }
 }
