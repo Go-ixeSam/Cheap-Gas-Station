@@ -16,9 +16,9 @@ import android.location.LocationManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.SystemClock;
-import android.util.Log;
 import android.view.animation.AccelerateDecelerateInterpolator;
 import android.view.animation.Interpolator;
+import android.widget.Toast;
 
 import androidx.annotation.DrawableRes;
 import androidx.appcompat.app.AlertDialog;
@@ -36,6 +36,7 @@ import com.google.android.gms.maps.model.BitmapDescriptorFactory;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
+import com.google.android.gms.maps.model.Polyline;
 import com.google.android.gms.maps.model.PolylineOptions;
 import com.hoanpham.uit.cheapgasstation.Base.GoogleApiClient;
 import com.hoanpham.uit.cheapgasstation.Base.GoogleApiInterface;
@@ -64,6 +65,7 @@ import io.reactivex.rxjava3.schedulers.Schedulers;
 public class DirectionActivity extends AppCompatActivity implements OnMapReadyCallback, GoogleMap.OnMarkerClickListener, GoogleMap.OnInfoWindowClickListener {
 
     private static final String DRIVING_MODE = "driving";
+    private static final String NEARBY_TYPE = "gas_station";
     private static final int RADIUS = 5000;
     private SupportMapFragment mMapFragment;
     private GoogleMap mGoogleMap;
@@ -72,20 +74,18 @@ public class DirectionActivity extends AppCompatActivity implements OnMapReadyCa
     private int totalTime;
     private boolean mFirstZoom = true;
     private Location mCurrentLocation;
-    private Marker mLatestMarker = null;
     private Marker mPreviousMarker = null;
+    private Polyline mPolyline = null;
     private ArrayList<Marker> mListMarker = new ArrayList<>();
     private List<LatLng> mListNearby = new ArrayList<>();
-    private float bearing;
+    private boolean isGPSProvider = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_direction);
         initMap();
-
         mLocationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
-
     }
 
     @Override
@@ -95,13 +95,12 @@ public class DirectionActivity extends AppCompatActivity implements OnMapReadyCa
         mGoogleMap.setInfoWindowAdapter(new MarkerInfoWindowAdapter(this));
         mGoogleMap.setOnInfoWindowClickListener(this);
         mGoogleMap.setOnMarkerClickListener(this);
-//        onResume();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        if(mGoogleMap != null && mCurrentLocation != null){
+        if (mGoogleMap != null && mCurrentLocation != null) {
             searchGasNearbyCurrentPosition(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
         }
 //        draw direction two point
@@ -171,11 +170,10 @@ public class DirectionActivity extends AppCompatActivity implements OnMapReadyCa
     }
 
     private void searchGasNearbyCurrentPosition(double lat, double lng) {
-        Log.d("TAGGG", "searchGasNearbyCurrentPosition: ");
         GoogleApiInterface api = GoogleApiClient.createService(GoogleApiInterface.class);
         Single<NearbyResults> resultsSingle = api.getNearByPlace(lat + "," + lng,
                 String.valueOf(RADIUS),
-                "gas_station",
+                NEARBY_TYPE,
                 getResources().getString(R.string.google_map_key_1));
         resultsSingle.observeOn(AndroidSchedulers.mainThread())
                 .subscribeOn(Schedulers.io())
@@ -188,8 +186,6 @@ public class DirectionActivity extends AppCompatActivity implements OnMapReadyCa
 
                     @Override
                     public void onSuccess(@NonNull NearbyResults nearbyResults) {
-
-                        Log.d("TAGGG", "onSuccess: " + nearbyResults.getResults());
                         if (nearbyResults.getResults().size() > 0) {
                             for (int i = 0; i < nearbyResults.getResults().size(); i++) {
                                 Geometry geo = nearbyResults.getResults().get(i).getGeometry();
@@ -198,21 +194,18 @@ public class DirectionActivity extends AppCompatActivity implements OnMapReadyCa
                             }
                         }
                         if (mListNearby.size() > 0) {
-//                            mHandler.post(() -> {
                             showMarkerInMap(mListNearby, new LatLng(lat, lng));
-//                            });
                         }
                     }
 
                     @Override
                     public void onError(@NonNull Throwable e) {
-                        Log.d("TAGGG", "onError: " + e.getMessage());
                     }
                 });
     }
 
-    private void removeListMarkerPlace(List<Marker> placeNearby){
-        for (Marker marker : placeNearby){
+    private void removeListMarkerPlace(List<Marker> placeNearby) {
+        for (Marker marker : placeNearby) {
             marker.remove();
         }
     }
@@ -223,7 +216,7 @@ public class DirectionActivity extends AppCompatActivity implements OnMapReadyCa
         addMarkerToGoogleMap(currentLocation.latitude, currentLocation.longitude);
         for (LatLng latLng : position) {
             MarkerOptions markerOptions = new MarkerOptions();
-            markerOptions.icon(bitmapDescriptorFromVector(getBaseContext(), R.drawable.ic_location_icon));
+            markerOptions.icon(bitmapDescriptorFromVector(getBaseContext(), R.drawable.ic_gas_station));
             markerOptions.position(latLng);
             Marker marker = mGoogleMap.addMarker(markerOptions);
             mListMarker.add(marker);
@@ -236,7 +229,7 @@ public class DirectionActivity extends AppCompatActivity implements OnMapReadyCa
 
             MarkerOptions mMarkerOptions = new MarkerOptions();
             mMarkerOptions.position(new LatLng(lat, lng));
-            mMarkerOptions.icon(bitmapDescriptorFromVector(getBaseContext(), R.drawable.ic_location_icon));
+            mMarkerOptions.icon(bitmapDescriptorFromVector(getBaseContext(), R.drawable.ic_car));
             String addressName = getNameLocationFromLatLng(lat, lng);
             mMarkerOptions.title(addressName);
             mGoogleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(lat, lng), 17));
@@ -259,35 +252,43 @@ public class DirectionActivity extends AppCompatActivity implements OnMapReadyCa
 
 
     private void getUserLocation() {
-        mGoogleMap.setMyLocationEnabled(true);
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(DirectionActivity.this, new String[]{Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION}, 1);
             return;
         }
-        mLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0, new LocationListener() {
-            @Override
-            public void onLocationChanged(Location location) {
-                if (location == null || location.getLatitude() == 0 || location.getLongitude() == 0) {
-                    return;
+
+        if (mCurrentLocation == null || !isGPSProvider) {
+            mLocationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 0, 10, new LocationListener() {
+                @Override
+                public void onLocationChanged(Location location) {
+                    moveCarRealTimeLocation(location);
                 }
 
-                if (mPreviousMarker != null) {
-                    mPreviousMarker.remove();
+                @Override
+                public void onStatusChanged(String provider, int status, Bundle extras) {
+
                 }
-                mCurrentLocation = location;
-                LatLng latLng = new LatLng(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
-                mLatestMarker = mGoogleMap.addMarker(new MarkerOptions().position(latLng).flat(true).icon(bitmapDescriptorFromVector(getBaseContext(), R.drawable.ic_location_icon)));
-                mPreviousMarker = mLatestMarker;
-                if(mFirstZoom) {
-                    CameraUpdate cameraUpdate = CameraUpdateFactory.newLatLngZoom(
-                            latLng, 17f);
-                    mGoogleMap.animateCamera(cameraUpdate);
-                    mFirstZoom = false;
+
+                @Override
+                public void onProviderEnabled(String provider) {
+
                 }
-                bearing = location.getBearing();
-                LatLng updatedLatLng = new LatLng(location.getLatitude(), location.getLongitude());
-                changePositionSmoothly(mLatestMarker, updatedLatLng, bearing);
-                onResume();
+
+                @Override
+                public void onProviderDisabled(String provider) {
+
+                }
+            });
+        }
+
+        mLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 10, new LocationListener() {
+            @Override
+            public void onLocationChanged(Location location) {
+                if (location != null) {
+                    Toast.makeText(DirectionActivity.this, "GPS provider", Toast.LENGTH_SHORT).show();
+                    isGPSProvider = true;
+                    moveCarRealTimeLocation(location);
+                }
             }
 
             @Override
@@ -305,6 +306,31 @@ public class DirectionActivity extends AppCompatActivity implements OnMapReadyCa
 
             }
         });
+
+    }
+
+    private void moveCarRealTimeLocation(Location location) {
+        if (location == null || location.getLatitude() == 0 || location.getLongitude() == 0) {
+            return;
+        }
+
+        if (mPreviousMarker != null) {
+            mPreviousMarker.remove();
+        }
+        mCurrentLocation = location;
+        LatLng latLng = new LatLng(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
+        Marker mLatestMarker = mGoogleMap.addMarker(new MarkerOptions().position(latLng).flat(true).icon(bitmapDescriptorFromVector(getBaseContext(), R.drawable.ic_car)));
+        mPreviousMarker = mLatestMarker;
+        if (mFirstZoom) {
+            CameraUpdate cameraUpdate = CameraUpdateFactory.newLatLngZoom(
+                    latLng, 17f);
+            mGoogleMap.animateCamera(cameraUpdate);
+            mFirstZoom = false;
+        }
+        float bearing = location.getBearing();
+        LatLng updatedLatLng = new LatLng(location.getLatitude(), location.getLongitude());
+        changePositionSmoothly(mLatestMarker, updatedLatLng, bearing);
+        onResume();
     }
 
     private BitmapDescriptor bitmapDescriptorFromVector(Context context, @DrawableRes int vectorDrawableResourceId) {
@@ -402,6 +428,9 @@ public class DirectionActivity extends AppCompatActivity implements OnMapReadyCa
     }
 
     private void drawDirectionTwoPoint(LatLng fromLatLng, LatLng toLatLng, boolean addMarkerEndPoint) {
+        if (mPolyline != null) {
+            mPolyline.remove();
+        }
         GoogleApiInterface apiInterface = GoogleApiClient.createService(GoogleApiInterface.class);
         apiInterface.getDirectionWithTwoPoint(fromLatLng.latitude + ", " + fromLatLng.longitude,
                 toLatLng.latitude + ", " + toLatLng.longitude,
@@ -437,14 +466,14 @@ public class DirectionActivity extends AppCompatActivity implements OnMapReadyCa
                             }
                         }
                         if (routelist.size() > 0) {
-                            PolylineOptions rectLine = new PolylineOptions().width(10).color(
+                            PolylineOptions mRectLine = new PolylineOptions().width(10).color(
                                     Color.RED);
 
                             for (int i = 0; i < routelist.size(); i++) {
-                                rectLine.add(routelist.get(i));
+                                mRectLine.add(routelist.get(i));
                             }
-                            mGoogleMap.addPolyline(rectLine);
-                            if(addMarkerEndPoint){
+                            mPolyline = mGoogleMap.addPolyline(mRectLine);
+                            if (addMarkerEndPoint) {
                                 MarkerOptions markerOptions = new MarkerOptions();
                                 markerOptions.position(new LatLng(toLatLng.latitude, toLatLng.longitude));
                                 markerOptions.draggable(true);
@@ -468,6 +497,7 @@ public class DirectionActivity extends AppCompatActivity implements OnMapReadyCa
 
     @Override
     public boolean onMarkerClick(Marker marker) {
+
         drawDirectionTwoPoint(new LatLng(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude()), new LatLng(marker.getPosition().latitude, marker.getPosition().longitude), false);
         return true;
     }
