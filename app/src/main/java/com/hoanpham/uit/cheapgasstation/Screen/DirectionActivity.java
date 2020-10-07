@@ -11,7 +11,6 @@ import android.graphics.drawable.Drawable;
 import android.location.Address;
 import android.location.Geocoder;
 import android.location.Location;
-import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.Bundle;
 import android.os.Handler;
@@ -26,6 +25,11 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.LocationCallback;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationResult;
+import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.maps.CameraUpdate;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
@@ -53,6 +57,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 
 import io.reactivex.rxjava3.android.schedulers.AndroidSchedulers;
 import io.reactivex.rxjava3.annotations.NonNull;
@@ -62,23 +67,32 @@ import io.reactivex.rxjava3.disposables.Disposable;
 import io.reactivex.rxjava3.schedulers.Schedulers;
 
 
-public class DirectionActivity extends AppCompatActivity implements OnMapReadyCallback, GoogleMap.OnMarkerClickListener, GoogleMap.OnInfoWindowClickListener {
+public class DirectionActivity extends AppCompatActivity implements
+        OnMapReadyCallback,
+        GoogleMap.OnMarkerClickListener,
+        GoogleMap.OnInfoWindowClickListener {
 
     private static final String DRIVING_MODE = "driving";
     private static final String NEARBY_TYPE = "gas_station";
+    public static final long UPDATE_INTERVAL_IN_MILLISECONDS = 1000;
+    public static final long FASTEST_UPDATE_INTERVAL_IN_MILLISECONDS = UPDATE_INTERVAL_IN_MILLISECONDS / 2;
     private static final int RADIUS = 5000;
-    private SupportMapFragment mMapFragment;
+    private static final double MIN_DISTANCE = 5; //meters
     private GoogleMap mGoogleMap;
     private LocationManager mLocationManager;
     private int totalDistance;
     private int totalTime;
     private boolean mFirstZoom = true;
-    private Location mCurrentLocation;
+    private Location mCurrentLocation, mPreviousLocation;
     private Marker mPreviousMarker = null;
     private Polyline mPolyline = null;
     private ArrayList<Marker> mListMarker = new ArrayList<>();
     private List<LatLng> mListNearby = new ArrayList<>();
     private boolean isGPSProvider = false;
+    private FusedLocationProviderClient mFusedLocationClient;
+    private LocationCallback mLocationCallback;
+
+    private LocationRequest mLocationRequest;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -86,6 +100,61 @@ public class DirectionActivity extends AppCompatActivity implements OnMapReadyCa
         setContentView(R.layout.activity_direction);
         initMap();
         mLocationManager = (LocationManager) getSystemService(LOCATION_SERVICE);
+        mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this);
+        createLocationRequest();
+
+        mLocationCallback = new LocationCallback() {
+            @Override
+            public void onLocationResult(LocationResult locationResult) {
+                super.onLocationResult(locationResult);
+                if (mPreviousLocation != null && locationResult.getLastLocation() != null) {
+                    double distance = mPreviousLocation.distanceTo(locationResult.getLastLocation());
+                    if (distance >= MIN_DISTANCE) {
+                        mCurrentLocation = locationResult.getLastLocation();
+                        mPreviousLocation = mCurrentLocation;
+                        moveCarRealTimeLocation(mCurrentLocation);
+                    }
+                } else if (locationResult.getLastLocation() != null) {
+                    mCurrentLocation = locationResult.getLastLocation();
+                    mPreviousLocation = mCurrentLocation;
+                    moveCarRealTimeLocation(mCurrentLocation);
+                }
+            }
+        };
+    }
+
+    private void updateLocation() {
+        if (mFusedLocationClient != null) {
+            mFusedLocationClient.requestLocationUpdates(mLocationRequest, mLocationCallback, getMainLooper());
+        }
+    }
+
+    private void getLastLocation() {
+        try {
+            mFusedLocationClient.getLastLocation()
+                    .addOnCompleteListener(task -> {
+                        if (task.isSuccessful() && task.getResult() != null) {
+                            mCurrentLocation = task.getResult();
+                            mPreviousLocation = mCurrentLocation;
+                            addMarkerToGoogleMap(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
+                            updateLocation();
+                        } else {
+                            Toast.makeText(this, "Error" + Objects.requireNonNull(task.getException()).getLocalizedMessage(), Toast.LENGTH_SHORT).show();
+                        }
+                    });
+        } catch (SecurityException unlikely) {
+            Toast.makeText(this, "Error" + unlikely.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /**
+     * Sets the location request parameters.
+     */
+    private void createLocationRequest() {
+        mLocationRequest = new LocationRequest();
+        mLocationRequest.setInterval(UPDATE_INTERVAL_IN_MILLISECONDS);
+        mLocationRequest.setFastestInterval(FASTEST_UPDATE_INTERVAL_IN_MILLISECONDS);
+        mLocationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
     }
 
     @Override
@@ -103,70 +172,6 @@ public class DirectionActivity extends AppCompatActivity implements OnMapReadyCa
         if (mGoogleMap != null && mCurrentLocation != null) {
             searchGasNearbyCurrentPosition(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
         }
-//        draw direction two point
-//        if (mGoogleMap != null && lat != 0 && lng != 0) {
-//            MarkerOptions m1 = new MarkerOptions();
-//            m1.position(new LatLng(lat, lng));
-//            mGoogleMap.addMarker(m1);
-//            if (ContextCompat.checkSelfPermission(DirectionActivity.this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-//                ActivityCompat.requestPermissions(DirectionActivity.this, new String[]{Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION}, 1);
-//            } else {
-//                GoogleApiInterface apiInterface = GoogleApiClient.createService(GoogleApiInterface.class);
-//                apiInterface.getDirectionWithTwoPoint(lat + ", " + lng,
-//                        "12.2387911, 109.1967488", "driving",
-//                        getResources().getString(R.string.google_map_key_1))
-//                        .subscribeOn(Schedulers.io())
-//                        .observeOn(AndroidSchedulers.mainThread())
-//                        .subscribeWith(new SingleObserver<DirectionResults>() {
-//                            @Override
-//                            public void onSubscribe(@NonNull Disposable d) {
-//                            }
-//
-//                            @Override
-//                            public void onSuccess(@NonNull DirectionResults directionResults) {
-//                                ArrayList<LatLng> routelist = new ArrayList<LatLng>();
-//                                if (directionResults.getRoutes().size() > 0) {
-//                                    ArrayList<LatLng> decodelist;
-//                                    Route routeA = directionResults.getRoutes().get(0);
-//                                    if (routeA.getLegs().size() > 0) {
-//                                        List<Step> steps = routeA.getLegs().get(0).getSteps();
-//                                        totalDistance = routeA.getLegs().get(0).getDistance().getValue();//m
-//                                        totalTime = routeA.getLegs().get(0).getDuration().getValue();//s
-//                                        Step step;
-//                                        String polyline;
-//                                        for (int i = 0; i < steps.size(); i++) {
-//                                            step = steps.get(i);
-//                                            routelist.add(new LatLng(step.getStartLocation().getLat(), step.getStartLocation().getLng()));
-//                                            polyline = step.getPolyline().getPoints();
-//                                            decodelist = RouteDecode.decodePoly(polyline);
-//                                            routelist.addAll(decodelist);
-//                                            routelist.add(new LatLng(step.getEndLocation().getLat(), step.getEndLocation().getLng()));
-//                                        }
-//                                    }
-//                                }
-//                                if (routelist.size() > 0) {
-//                                    PolylineOptions rectLine = new PolylineOptions().width(10).color(
-//                                            Color.RED);
-//
-//                                    for (int i = 0; i < routelist.size(); i++) {
-//                                        rectLine.add(routelist.get(i));
-//                                    }
-//                                    mGoogleMap.addPolyline(rectLine);
-//                                    MarkerOptions markerOptions = new MarkerOptions();
-//                                    markerOptions.position(new LatLng(12.2387911, 109.1967488));
-//                                    markerOptions.draggable(true);
-//                                    mGoogleMap.addMarker(markerOptions);
-//                                }
-//                            }
-//
-//                            @Override
-//                            public void onError(@NonNull Throwable e) {
-//
-//                            }
-//                        });
-//
-//            }
-//        }
     }
 
     private void searchGasNearbyCurrentPosition(double lat, double lng) {
@@ -233,7 +238,7 @@ public class DirectionActivity extends AppCompatActivity implements OnMapReadyCa
             String addressName = getNameLocationFromLatLng(lat, lng);
             mMarkerOptions.title(addressName);
             mGoogleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(lat, lng), 17));
-            mGoogleMap.addMarker(mMarkerOptions);
+            mPreviousMarker = mGoogleMap.addMarker(mMarkerOptions);//remove after move
         }
     }
 
@@ -250,63 +255,12 @@ public class DirectionActivity extends AppCompatActivity implements OnMapReadyCa
         return address;
     }
 
-
     private void getUserLocation() {
         if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(DirectionActivity.this, new String[]{Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION}, 1);
             return;
         }
-
-        if (mCurrentLocation == null || !isGPSProvider) {
-            mLocationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 0, 10, new LocationListener() {
-                @Override
-                public void onLocationChanged(Location location) {
-                    moveCarRealTimeLocation(location);
-                }
-
-                @Override
-                public void onStatusChanged(String provider, int status, Bundle extras) {
-
-                }
-
-                @Override
-                public void onProviderEnabled(String provider) {
-
-                }
-
-                @Override
-                public void onProviderDisabled(String provider) {
-
-                }
-            });
-        }
-
-        mLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 10, new LocationListener() {
-            @Override
-            public void onLocationChanged(Location location) {
-                if (location != null) {
-                    Toast.makeText(DirectionActivity.this, "GPS provider", Toast.LENGTH_SHORT).show();
-                    isGPSProvider = true;
-                    moveCarRealTimeLocation(location);
-                }
-            }
-
-            @Override
-            public void onStatusChanged(String provider, int status, Bundle extras) {
-
-            }
-
-            @Override
-            public void onProviderEnabled(String provider) {
-
-            }
-
-            @Override
-            public void onProviderDisabled(String provider) {
-
-            }
-        });
-
+        getLastLocation();
     }
 
     private void moveCarRealTimeLocation(Location location) {
@@ -388,7 +342,7 @@ public class DirectionActivity extends AppCompatActivity implements OnMapReadyCa
     }
 
     private void initMap() {
-        mMapFragment = (SupportMapFragment) getSupportFragmentManager().findFragmentById(R.id.fragmentGoogleMapSupport);
+        SupportMapFragment mMapFragment = (SupportMapFragment) getSupportFragmentManager().findFragmentById(R.id.fragmentGoogleMapSupport);
         if (mMapFragment != null) {
             mMapFragment.getMapAsync(this);
         }
