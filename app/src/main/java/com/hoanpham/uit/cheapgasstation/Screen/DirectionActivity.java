@@ -15,6 +15,7 @@ import android.location.LocationManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.SystemClock;
+import android.util.Log;
 import android.view.animation.AccelerateDecelerateInterpolator;
 import android.view.animation.Interpolator;
 import android.widget.Toast;
@@ -37,7 +38,9 @@ import com.google.android.gms.maps.OnMapReadyCallback;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.BitmapDescriptor;
 import com.google.android.gms.maps.model.BitmapDescriptorFactory;
+import com.google.android.gms.maps.model.CameraPosition;
 import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.LatLngBounds;
 import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.maps.model.Polyline;
@@ -76,7 +79,7 @@ public class DirectionActivity extends AppCompatActivity implements
     private static final String NEARBY_TYPE = "gas_station";
     public static final long UPDATE_INTERVAL_IN_MILLISECONDS = 1000;
     public static final long FASTEST_UPDATE_INTERVAL_IN_MILLISECONDS = UPDATE_INTERVAL_IN_MILLISECONDS / 2;
-    private static final int RADIUS = 5000;
+    private static final int RADIUS = 10000;
     private static final double MIN_DISTANCE = 5; //meters
     private GoogleMap mGoogleMap;
     private LocationManager mLocationManager;
@@ -88,11 +91,15 @@ public class DirectionActivity extends AppCompatActivity implements
     private Polyline mPolyline = null;
     private ArrayList<Marker> mListMarker = new ArrayList<>();
     private List<LatLng> mListNearby = new ArrayList<>();
-    private boolean isGPSProvider = false;
     private FusedLocationProviderClient mFusedLocationClient;
     private LocationCallback mLocationCallback;
-
     private LocationRequest mLocationRequest;
+
+    //    check new move marker realtime
+    private static final int ANIMATE_SPEED = 1500;
+    private static final int ANIMATE_SPEED_TURN = 1000;
+    private static final int BEARING_OFFSET = 20;
+    private float tilt = 90;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -109,15 +116,21 @@ public class DirectionActivity extends AppCompatActivity implements
                 super.onLocationResult(locationResult);
                 if (mPreviousLocation != null && locationResult.getLastLocation() != null) {
                     double distance = mPreviousLocation.distanceTo(locationResult.getLastLocation());
+                    Log.d("TAGGG", "onLocationResult: distance " + distance);
                     if (distance >= MIN_DISTANCE) {
                         mCurrentLocation = locationResult.getLastLocation();
                         mPreviousLocation = mCurrentLocation;
                         moveCarRealTimeLocation(mCurrentLocation);
+                        onResume();
+                        Log.d("TAGGG", "onLocationResult: fdfdd");
                     }
+                    Log.d("TAGGG", "onLocationResult: 1");
                 } else if (locationResult.getLastLocation() != null) {
                     mCurrentLocation = locationResult.getLastLocation();
                     mPreviousLocation = mCurrentLocation;
                     moveCarRealTimeLocation(mCurrentLocation);
+                    onResume();
+                    Log.d("TAGGG", "onLocationResult: 2");
                 }
             }
         };
@@ -125,8 +138,24 @@ public class DirectionActivity extends AppCompatActivity implements
 
     private void updateLocation() {
         if (mFusedLocationClient != null) {
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                // TODO: Consider calling
+                //    ActivityCompat#requestPermissions
+                // here to request the missing permissions, and then overriding
+                //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                //                                          int[] grantResults)
+                // to handle the case where the user grants the permission. See the documentation
+                // for ActivityCompat#requestPermissions for more details.
+                ActivityCompat.requestPermissions(DirectionActivity.this, new String[]{Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION}, 1);
+                return;
+            }
+            Log.d("TAGGG", "updateLocation: ffdfwq");
             mFusedLocationClient.requestLocationUpdates(mLocationRequest, mLocationCallback, getMainLooper());
         }
+    }
+
+    private void checkPermission(){
+
     }
 
     private void getLastLocation() {
@@ -138,6 +167,7 @@ public class DirectionActivity extends AppCompatActivity implements
                             mPreviousLocation = mCurrentLocation;
                             addMarkerToGoogleMap(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
                             updateLocation();
+                            onResume();
                         } else {
                             Toast.makeText(this, "Error" + Objects.requireNonNull(task.getException()).getLocalizedMessage(), Toast.LENGTH_SHORT).show();
                         }
@@ -160,18 +190,20 @@ public class DirectionActivity extends AppCompatActivity implements
     @Override
     public void onMapReady(GoogleMap googleMap) {
         mGoogleMap = googleMap;
-        getUserLocation();
         mGoogleMap.setInfoWindowAdapter(new MarkerInfoWindowAdapter(this));
         mGoogleMap.setOnInfoWindowClickListener(this);
+        googleMap.getUiSettings().setZoomControlsEnabled(true);
         mGoogleMap.setOnMarkerClickListener(this);
+        mGoogleMap.getUiSettings().setTiltGesturesEnabled(true);
+        getUserLocation();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        if (mGoogleMap != null && mCurrentLocation != null) {
-            searchGasNearbyCurrentPosition(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
-        }
+//        if (mGoogleMap != null && mCurrentLocation != null) {
+//            searchGasNearbyCurrentPosition(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
+//        }
     }
 
     private void searchGasNearbyCurrentPosition(double lat, double lng) {
@@ -217,8 +249,7 @@ public class DirectionActivity extends AppCompatActivity implements
 
     private void showMarkerInMap(List<LatLng> position, LatLng currentLocation) {
         removeListMarkerPlace(mListMarker);
-        mGoogleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(currentLocation, 17.f));
-        addMarkerToGoogleMap(currentLocation.latitude, currentLocation.longitude);
+        mGoogleMap.animateCamera(CameraUpdateFactory.newLatLngZoom(currentLocation, 18.f));
         for (LatLng latLng : position) {
             MarkerOptions markerOptions = new MarkerOptions();
             markerOptions.icon(bitmapDescriptorFromVector(getBaseContext(), R.drawable.ic_gas_station));
@@ -237,7 +268,7 @@ public class DirectionActivity extends AppCompatActivity implements
             mMarkerOptions.icon(bitmapDescriptorFromVector(getBaseContext(), R.drawable.ic_car));
             String addressName = getNameLocationFromLatLng(lat, lng);
             mMarkerOptions.title(addressName);
-            mGoogleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(lat, lng), 17));
+            mGoogleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(new LatLng(lat, lng), 18.f));
             mPreviousMarker = mGoogleMap.addMarker(mMarkerOptions);//remove after move
         }
     }
@@ -256,7 +287,14 @@ public class DirectionActivity extends AppCompatActivity implements
     }
 
     private void getUserLocation() {
-        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            // TODO: Consider calling
+            //    ActivityCompat#requestPermissions
+            // here to request the missing permissions, and then overriding
+            //   public void onRequestPermissionsResult(int requestCode, String[] permissions,
+            //                                          int[] grantResults)
+            // to handle the case where the user grants the permission. See the documentation
+            // for ActivityCompat#requestPermissions for more details.
             ActivityCompat.requestPermissions(DirectionActivity.this, new String[]{Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION}, 1);
             return;
         }
@@ -264,6 +302,7 @@ public class DirectionActivity extends AppCompatActivity implements
     }
 
     private void moveCarRealTimeLocation(Location location) {
+        Log.d("TAGGG", "moveCarRealTimeLocation: ");
         if (location == null || location.getLatitude() == 0 || location.getLongitude() == 0) {
             return;
         }
@@ -273,11 +312,11 @@ public class DirectionActivity extends AppCompatActivity implements
         }
         mCurrentLocation = location;
         LatLng latLng = new LatLng(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
-        Marker mLatestMarker = mGoogleMap.addMarker(new MarkerOptions().position(latLng).flat(true).icon(bitmapDescriptorFromVector(getBaseContext(), R.drawable.ic_car)));
+        Marker mLatestMarker = mGoogleMap.addMarker(new MarkerOptions().position(latLng).flat(false).icon(bitmapDescriptorFromVector(getBaseContext(), R.drawable.ic_car)));
         mPreviousMarker = mLatestMarker;
         if (mFirstZoom) {
             CameraUpdate cameraUpdate = CameraUpdateFactory.newLatLngZoom(
-                    latLng, 17f);
+                    latLng, 18.f);
             mGoogleMap.animateCamera(cameraUpdate);
             mFirstZoom = false;
         }
@@ -298,7 +337,6 @@ public class DirectionActivity extends AppCompatActivity implements
 
     private void changePositionSmoothly(final Marker marker, final LatLng newLatLng, final float bearing) {
         final LatLng startPosition = new LatLng(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude());
-        final LatLng finalPosition = newLatLng;
         final Handler handler = new Handler();
         final long start = SystemClock.uptimeMillis();
         final Interpolator interpolator = new AccelerateDecelerateInterpolator();
@@ -319,8 +357,8 @@ public class DirectionActivity extends AppCompatActivity implements
                 v = interpolator.getInterpolation(t);
 
                 LatLng currentPosition = new LatLng(
-                        startPosition.latitude * (1 - t) + finalPosition.latitude * t,
-                        startPosition.longitude * (1 - t) + finalPosition.longitude * t);
+                        startPosition.latitude * (1 - t) + newLatLng.latitude * t,
+                        startPosition.longitude * (1 - t) + newLatLng.longitude * t);
 
                 marker.setPosition(currentPosition);
 
@@ -334,9 +372,32 @@ public class DirectionActivity extends AppCompatActivity implements
                     } else {
                         marker.setVisible(true);
                     }
+                    int width = getResources().getDisplayMetrics().widthPixels;
+                    int height = getResources().getDisplayMetrics().heightPixels;
+                    int padding = (int) (width * 0.10);
+                    LatLngBounds.Builder builder = new LatLngBounds.Builder();
+                    builder.include(marker.getPosition());
+                    LatLngBounds bounds = builder.build();
+                    CameraUpdate cu = CameraUpdateFactory.newLatLngBounds(bounds, width, height, padding);
+                    mGoogleMap.animateCamera(cu, new GoogleMap.CancelableCallback() {
+                        @Override
+                        public void onFinish() {
+                            float bearing = bearingTwoLatLng(startPosition, newLatLng);
+                            CameraPosition cameraPosition = new CameraPosition.Builder().bearing(bearing).zoom(18.f).target(newLatLng).tilt(tilt).build();
+                            mGoogleMap.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition));
+                            mCurrentLocation.setLatitude(newLatLng.latitude);
+                            mCurrentLocation.setLongitude(newLatLng.longitude);
+                        }
+
+                        @Override
+                        public void onCancel() {
+
+                        }
+                    });
                 }
                 mCurrentLocation.setLatitude(newLatLng.latitude);
                 mCurrentLocation.setLongitude(newLatLng.longitude);
+
             }
         });
     }
@@ -433,13 +494,12 @@ public class DirectionActivity extends AppCompatActivity implements
                                 markerOptions.draggable(true);
                                 mGoogleMap.addMarker(markerOptions);
                             }
-
                         }
                     }
 
                     @Override
                     public void onError(@NonNull Throwable e) {
-
+                        Toast.makeText(DirectionActivity.this, "Error: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                     }
                 });
     }
@@ -451,7 +511,8 @@ public class DirectionActivity extends AppCompatActivity implements
 
     @Override
     public boolean onMarkerClick(Marker marker) {
-
+        mGoogleMap.setInfoWindowAdapter(new MarkerInfoWindowAdapter(this));
+        marker.showInfoWindow();
         drawDirectionTwoPoint(new LatLng(mCurrentLocation.getLatitude(), mCurrentLocation.getLongitude()), new LatLng(marker.getPosition().latitude, marker.getPosition().longitude), false);
         return true;
     }
@@ -460,5 +521,19 @@ public class DirectionActivity extends AppCompatActivity implements
     public void onInfoWindowClick(Marker marker) {
         mGoogleMap.setInfoWindowAdapter(new MarkerInfoWindowAdapter(this));
         marker.showInfoWindow();
+    }
+
+    //    add new move car realtime
+    public float bearingTwoLatLng(LatLng first, LatLng second) {
+        Location start = convertLatLngToLocation(first);
+        Location end = convertLatLngToLocation(second);
+        return start.bearingTo(end);
+    }
+
+    private Location convertLatLngToLocation(LatLng latLng) {
+        Location location = new Location(LocationManager.GPS_PROVIDER);
+        location.setLatitude(latLng.latitude);
+        location.setLongitude(latLng.longitude);
+        return location;
     }
 }

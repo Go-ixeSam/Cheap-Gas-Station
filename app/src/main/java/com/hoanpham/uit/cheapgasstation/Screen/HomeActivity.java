@@ -7,21 +7,20 @@ import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import com.hoanpham.uit.cheapgasstation.Base.IndicartorSeekbar;
 import com.hoanpham.uit.cheapgasstation.R;
 
 public class HomeActivity extends AppCompatActivity implements View.OnClickListener {
 
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
 
+        setContentView(R.layout.activity_main);
         TextView mText = findViewById(R.id.ddd);
         mText.setOnClickListener(this);
         TextView mText1 = findViewById(R.id.ddd1);
         mText1.setOnClickListener(this);
-
     }
 
     @Override
