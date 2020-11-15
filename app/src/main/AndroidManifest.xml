@@ -9,6 +9,7 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.CAMERA" />
 
     <application
         android:allowBackup="true"
@@ -17,7 +18,12 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
+        <activity android:name=".Screen.GG01Activity" />
+        <activity android:name=".Screen.HomeActivity" />
 
+        <meta-data
+            android:name="com.google.firebase.ml.vision.DEPENDENCIES"
+            android:value="ocr" />
         <meta-data
             android:name="com.google.android.gms.version"
             android:value="@integer/google_play_services_version" />
@@ -25,7 +31,7 @@
             android:name="com.google.android.geo.API_KEY"
             android:value="@string/google_map_key_1" />
 
-        <activity android:name=".Screen.HomeActivity">
+        <activity android:name=".Screen.TextRecognition">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <action android:name="android.intent.action.VIEW" />
@@ -41,11 +47,10 @@
             android:name=".Screen.LoginActivity"
             android:configChanges="orientation"
             android:screenOrientation="portrait" />
-
-        <activity android:name=".Screen.DirectionActivity"
+        <activity
+            android:name=".Screen.DirectionActivity"
             android:configChanges="orientation"
-            android:screenOrientation="portrait"/>
-
+            android:screenOrientation="portrait" />
     </application>
 
 </manifest>
